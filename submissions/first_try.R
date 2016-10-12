@@ -140,6 +140,11 @@ transformed <- predict(trans, dt_train_num)
 # transform holdout set as well
 transformed_holdout <- predict(trans, holdout_num)
 
+# finally, test set
+trans <- preProcess(dt_test_num,
+                    method = c('BoxCox', 'center', 'scale'))
+transformed_test <- predict(trans, dt_test_num)
+
 # CAREFUL: The loss column was transformed as well. This needs to be untouched
 transformed$loss <- dt_train_num$loss
 transformed_holdout$loss <- holdout_num$loss
@@ -158,16 +163,17 @@ vars_to_remove <- unique(c(highCorr,zero_var_variables))
 
 # filter out near zero variance and highly correlated values from transformed
 transformed_train_vars_removed <- transformed[, -vars_to_remove]
-transformed_holdout_vars_removed <- transformed[, -vars_to_remove]
+transformed_holdout_vars_removed <- transformed_holdout[, -vars_to_remove]
+transformed_test_vars_removed <- transformed_test[, -vars_to_remove]
 
 ### Time to get crazy! xgboost time
 target <- dt_train$loss
-# transformed_train_vars_removed <- transformed_train_vars_removed[, -ncol(transformed_train_vars_removed)]
-# transformed_holdout_vars_removed <- transformed_holdout_vars_removed[, -ncol(transformed_holdout_vars_removed)]
-# data <- rbind(transformed_train_vars_removed, transformed_holdout_vars_removed)
-dt_train <- dt_train[, -ncol(dt_train)]
-holdout <- holdout[, -ncol(holdout)]
-data <- rbind(dt_train, holdout)
+transformed_train_vars_removed <- transformed_train_vars_removed[, -ncol(transformed_train_vars_removed)]
+transformed_holdout_vars_removed <- transformed_holdout_vars_removed[, -ncol(transformed_holdout_vars_removed)]
+data <- rbind(transformed_train_vars_removed, transformed_holdout_vars_removed)
+# dt_train <- dt_train[, -ncol(dt_train)]
+# holdout <- holdout[, -ncol(holdout)]
+# data <- rbind(dt_train, holdout)
 data <- data[, -1] # remove ids
 gc(verbose = FALSE)
 data_sparse <- sparse.model.matrix(~.-1, data = as.data.frame(data))
@@ -183,8 +189,7 @@ set.seed(27272436)
 temp_model <- xgb.cv(data = dtrain,
                      nthread = 8,
                      nfold = 4,
-                     #nrounds = 2, # quick test
-                     nrounds = 1000000,
+                     nrounds = 1000000, #
                      max_depth = 6,
                      eta = 0.01, # Santander overfitting magic number X2
                      subsample = 0.70,
@@ -213,9 +218,9 @@ temp_model <- xgb.train(data = dtrain,
                            objective = "reg:linear",
                            print_every_n = 10,
                            verbose = TRUE,
-                           watchlist = list(train = transformed_train_vars_removed))
+                           watchlist = list(train = dtrain))
 
-pred<-predict(temp_model,xgb.DMatrix(data.matrix(dt_test),missing=NA))
+pred<-predict(temp_model,xgb.DMatrix(data.matrix(transformed_test_vars_removed),missing=NA))
 
 submission <- read.csv('data/sample_submission.csv')
 head(submission,5)
