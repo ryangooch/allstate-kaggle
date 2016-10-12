@@ -31,9 +31,24 @@
 
 # read in data
 train <- read.csv('data/train.csv')
+test <- read.csv('data/test.csv')
 
+train_rows = nrow(train)
+
+# Since the factorization COULD be different between test and train, we should
+# concatenate the train and test sets together in a data frame, convert to
+# numeric, then separate.
+
+test$loss <- NA # since there is no loss in the test, encode as NA
+train_and_test <- rbind(train,test) # concatenate
+
+# Need colwise from plyr
 library(plyr)
-train <- colwise(as.numeric)(train)
+train_and_test <- colwise(as.numeric)(train_and_test)
+
+# now split train and test back up and remove loss column from test
+train <- train_and_test[1:train_rows,]
+test <- train_and_test[-nrow(train_and_test),]
 
 smp_size <- floor(0.75 * nrow(train))
 
