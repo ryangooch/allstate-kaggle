@@ -16,7 +16,7 @@ Each row in this dataset represents an insurance claim. You must predict the val
 
 File descriptions:
 
-* dt_train.csv - the dt_training set
+* train.csv - the training set
 * test.csv - the test set. You must predict the loss value for the ids in this file.
 * sample_submission.csv - a sample submission file in the correct format
 
@@ -39,13 +39,13 @@ library(FSelector)
 
 ```{r, echo=TRUE, eval=FALSE}
 #cat(system("ls -sh ../input/*", intern = TRUE))
-cat(system("ls -sh ../input/dt_train.csv", intern = TRUE), "\n", sep = "")
+cat(system("ls -sh ../input/train.csv", intern = TRUE), "\n", sep = "")
 cat(system("ls -sh ../input/test.csv", intern = TRUE), "\n", sep = "")
 cat(system("ls -sh ../input/sample_submission.csv", intern = TRUE), "\n", sep = "")
 ```
 
 ```{r, echo=FALSE, eval=TRUE}
-cat(system("ls -sh ../input/dt_train.csv", intern = TRUE), "\n", sep = "")
+cat(system("ls -sh ../input/train.csv", intern = TRUE), "\n", sep = "")
 cat(system("ls -sh ../input/test.csv", intern = TRUE), "\n", sep = "")
 cat(system("ls -sh ../input/sample_submission.csv", intern = TRUE), "\n", sep = "")
 ```
@@ -53,7 +53,7 @@ cat(system("ls -sh ../input/sample_submission.csv", intern = TRUE), "\n", sep = 
 ### How many lines before we even load the data?
 
 ```{r}
-cat(system("cat ../input/dt_train.csv | wc -l", intern = TRUE), "\n", sep = "")
+cat(system("cat ../input/train.csv | wc -l", intern = TRUE), "\n", sep = "")
 cat(system("cat ../input/test.csv | wc -l", intern = TRUE), "\n", sep = "")
 cat(system("cat ../input/sample_submission.csv | wc -l", intern = TRUE), "\n", sep = "")
 ```
@@ -61,7 +61,7 @@ cat(system("cat ../input/sample_submission.csv | wc -l", intern = TRUE), "\n", s
 ### What are the MD5 hashes?
 
 ```{r}
-cat(system("md5sum ../input/dt_train.csv", intern = TRUE), "\n", sep = "")
+cat(system("md5sum ../input/train.csv", intern = TRUE), "\n", sep = "")
 cat(system("md5sum ../input/test.csv", intern = TRUE), "\n", sep = "")
 cat(system("md5sum ../input/sample_submission.csv", intern = TRUE), "\n", sep = "")
 ```
@@ -93,10 +93,10 @@ Lets look at 25 rows. Well...:
 * Loss (label to predict)
 
 ```{r, results='asis'}
-dt_train <- fread("../input/dt_train.csv", header = TRUE, showProgress = FALSE, stringsAsFactors = TRUE)
+train <- fread("../input/train.csv", header = TRUE, showProgress = FALSE, stringsAsFactors = TRUE)
 test <- fread("../input/test.csv", header = TRUE, showProgress = FALSE, stringsAsFactors = TRUE)
-print("  \n#### dt_train  \n  \n")
-pprint(dt_train[1:25, ])
+print("  \n#### Train  \n  \n")
+pprint(train[1:25, ])
 print("  \n#### Test  \n  \n")
 pprint(test[1:25, ])
 ```
@@ -104,31 +104,31 @@ pprint(test[1:25, ])
 Can we see something in the id? ("loss" -> "id", ref: @Ren Zhang, @Anokas)
 
 ```{r}
-plot(x = 1:nrow(dt_train), y = dt_train$loss, type = "h", main = "Loss vs row number", xlab = "Row number", ylab = "Loss")
-plot(x = 1:nrow(dt_train), y = log(dt_train$loss + 1), type = "h", main = "log(Loss+1) vs row number", xlab = "Row number", ylab = "log(Loss+1)")
-plot(x = dt_train$id, y = dt_train$loss, type = "h", main = "Loss vs row number", xlab = "Id", ylab = "Loss")
-plot(x = dt_train$id, y = log(dt_train$loss + 1), type = "h", main = "log(Loss+1) vs row number", xlab = "Id", ylab = "log(Loss+1)")
+plot(x = 1:nrow(train), y = train$loss, type = "h", main = "Loss vs row number", xlab = "Row number", ylab = "Loss")
+plot(x = 1:nrow(train), y = log(train$loss + 1), type = "h", main = "log(Loss+1) vs row number", xlab = "Row number", ylab = "log(Loss+1)")
+plot(x = train$id, y = train$loss, type = "h", main = "Loss vs row number", xlab = "Id", ylab = "Loss")
+plot(x = train$id, y = log(train$loss + 1), type = "h", main = "log(Loss+1) vs row number", xlab = "Id", ylab = "log(Loss+1)")
 ```
 
 Let's go ham and run a dumb xgboost! (rolling the blackbox)
 
 ```{r}
-target <- dt_train$loss
-dt_train <- dt_train[, loss := NULL]
-data <- rbind(dt_train, test)
+target <- train$loss
+train <- train[, loss := NULL]
+data <- rbind(train, test)
 data <- data[, id := NULL]
 gc(verbose = FALSE)
 data_sparse <- sparse.model.matrix(~.-1, data = as.data.frame(data))
 cat("Data size: ", data_sparse@Dim[1], " x ", data_sparse@Dim[2], "  \n", sep = "")
 gc(verbose = FALSE)
-ddt_train <- xgb.DMatrix(data = data_sparse[1:nrow(dt_train), ], label = target) # Create design matrix without intercept
+dtrain <- xgb.DMatrix(data = data_sparse[1:nrow(train), ], label = target) # Create design matrix without intercept
 gc(verbose = FALSE)
-dtest <- xgb.DMatrix(data = data_sparse[(nrow(dt_train)+1):nrow(data), ]) # Create design matrix without intercept
+dtest <- xgb.DMatrix(data = data_sparse[(nrow(train)+1):nrow(data), ]) # Create design matrix without intercept
 
 
 gc(verbose = FALSE)
 set.seed(12345678)
-temp_model <- xgb.cv(data = ddt_train,
+temp_model <- xgb.cv(data = dtrain,
                         nthread = 8,
                         nfold = 4,
                         #nrounds = 2, # quick test
@@ -147,7 +147,7 @@ temp_model <- xgb.cv(data = ddt_train,
 
 gc(verbose = FALSE)
 set.seed(12345678)
-temp_model <- xgb.dt_train(data = ddt_train,
+temp_model <- xgb.train(data = dtrain,
                         nthread = 8,
                         #nrounds = 2, # quick test
                         nrounds = floor(temp_model$best_iteration * 1.25),
@@ -161,7 +161,7 @@ temp_model <- xgb.dt_train(data = ddt_train,
                         objective = "reg:linear",
                         print_every_n = 10,
                         verbose = TRUE,
-                        watchlist = list(dt_train = ddt_train))
+                        watchlist = list(train = dtrain))
 ```
 
 ### Importance of features in xgboost?
@@ -209,7 +209,7 @@ submission$loss <- predictedValues
 write.csv(submission, "my_submission.csv", row.names = FALSE)
 
 # Setup for next parts
-dt_train <- cbind(dt_train[, id := NULL], loss = target)
+train <- cbind(train[, id := NULL], loss = target)
 ```
 
 ### Compute information gain
@@ -217,17 +217,17 @@ dt_train <- cbind(dt_train[, id := NULL], loss = target)
 ```{r}
 mini_frame <- data.frame(matrix(nrow = 130, ncol = 2))
 colnames(mini_frame) <- c("Feature", "Information_Gain")
-mini_frame$Feature <- colnames(dt_train)[1:130]
+mini_frame$Feature <- colnames(train)[1:130]
 gc(verbose = FALSE)
-mini_data <- data.frame(matrix(nrow = nrow(dt_train), ncol = 2))
+mini_data <- data.frame(matrix(nrow = nrow(train), ncol = 2))
 colnames(mini_data) <- c("Feature", "Loss")
-mini_data$Loss <- dt_train$loss
-for (i in colnames(dt_train)[1:130]) {
-    mini_data$Feature <- dt_train[[i]]
-    if (which(i == colnames(dt_train)[1:130]) < 117) {
+mini_data$Loss <- train$loss
+for (i in colnames(train)[1:130]) {
+    mini_data$Feature <- train[[i]]
+    if (which(i == colnames(train)[1:130]) < 117) {
         mini_data$Feature <- as.numeric(as.factor(mini_data$Feature)) # Information Gain does not care about "how it is spread"
     }
-    mini_frame$Information_Gain[which(i == colnames(dt_train)[1:130])] <- information.gain(Loss ~ ., data = mini_data)$attr_importance
+    mini_frame$Information_Gain[which(i == colnames(train)[1:130])] <- information.gain(Loss ~ ., data = mini_data)$attr_importance
 }
 ```
 
@@ -263,26 +263,26 @@ Why do we fail when doing feature engineering? We only fail when we stop trying.
 
 ```{r, fig.width=10, fig.height=25}
 gc(verbose = FALSE)
-mini_data <- data.frame(matrix(nrow = nrow(dt_train), ncol = 2))
+mini_data <- data.frame(matrix(nrow = nrow(train), ncol = 2))
 colnames(mini_data) <- c("Feature", "Loss")
-mini_data$Loss <- dt_train$loss
+mini_data$Loss <- train$loss
 par(mfrow = c(5, 2))
-for (i in colnames(dt_train)[1:130]) {
-    if (which(i == colnames(dt_train)[1:130]) == 71) {
+for (i in colnames(train)[1:130]) {
+    if (which(i == colnames(train)[1:130]) == 71) {
         par(mfrow = c(5, 1))
     }
     #cat("  \n   \n    #### Feature ", i, "  \n  \n", sep = "")
     #if (i == "cat116") {
     #    cat("Skipped because too big T_T  \n")
     #} else {
-        mini_data$Feature <- dt_train[[i]]
-        if (which(i == colnames(dt_train)[1:130]) < 117) {
+        mini_data$Feature <- train[[i]]
+        if (which(i == colnames(train)[1:130]) < 117) {
             mini_data$Feature <- as.factor(mini_data$Feature)
             plot(mini_data, main = paste("Loss vs ", i, sep = ""), xlab = i, ylab = "Loss")
         } else {
             plot(mini_data[!is.na(mini_data$Feature), ], main = paste("Loss vs ", i, sep = ""), xlab = i, ylab = "Loss", type = "h", xlim = range(mini_data$Feature, na.rm = TRUE, finite = TRUE))
         }
     #}
-    #plotluck(loss ~ ., dt_train[, c(which(i == colnames(dt_train)), 131), with = FALSE]) # SSSHHHHH Kaggle Docker does not have this package!
+    #plotluck(loss ~ ., train[, c(which(i == colnames(train)), 131), with = FALSE]) # SSSHHHHH Kaggle Docker does not have this package!
 }
 ```

@@ -145,4 +145,72 @@ transformed$loss <- dt_train_num$loss
 transformed_holdout$loss <- holdout_num$loss
 
 # look for near-zero variance predictors
-nearZeroVar(dt_train_num)
+zero_var_variables <- nearZeroVar(dt_train_num) 
+
+# Get correlation matrix for all variables
+correlations <- cor(dt_train_num)
+highCorr <- findCorrelation(correlations, cutoff = 0.80)
+# make sure the loss column isn't one that gets removed, but high correlated
+# loss to a predictor would be a good thing!
+highCorr
+
+vars_to_remove <- unique(c(highCorr,zero_var_variables))
+
+# filter out near zero variance and highly correlated values from transformed
+transformed_train_vars_removed <- transformed[, -vars_to_remove]
+transformed_holdout_vars_removed <- transformed[, -vars_to_remove]
+
+### Time to get crazy! xgboost time
+target <- dt_train$loss
+# transformed_train_vars_removed <- transformed_train_vars_removed[, -ncol(transformed_train_vars_removed)]
+# transformed_holdout_vars_removed <- transformed_holdout_vars_removed[, -ncol(transformed_holdout_vars_removed)]
+# data <- rbind(transformed_train_vars_removed, transformed_holdout_vars_removed)
+dt_train <- dt_train[, -ncol(dt_train)]
+holdout <- holdout[, -ncol(holdout)]
+data <- rbind(dt_train, holdout)
+data <- data[, -1] # remove ids
+gc(verbose = FALSE)
+data_sparse <- sparse.model.matrix(~.-1, data = as.data.frame(data))
+cat("Data size: ", data_sparse@Dim[1], " x ", data_sparse@Dim[2], "  \n", sep = "")
+gc(verbose = FALSE)
+dtrain <- xgb.DMatrix(data = data_sparse[1:nrow(transformed_train_vars_removed), ], label = target) # Create design matrix without intercept
+gc(verbose = FALSE)
+dtest <- xgb.DMatrix(data = data_sparse[(nrow(transformed_train_vars_removed)+1):nrow(data), ]) # Create design matrix without intercept
+
+
+gc(verbose = FALSE)
+set.seed(27272436)
+temp_model <- xgb.cv(data = dtrain,
+                     nthread = 8,
+                     nfold = 4,
+                     #nrounds = 2, # quick test
+                     nrounds = 1000000,
+                     max_depth = 6,
+                     eta = 0.0404096, # Santander overfitting magic number X2
+                     subsample = 0.70,
+                     colsample_bytree = 0.70,
+                     booster = "gbtree",
+                     metrics = c("mae"),
+                     maximize = FALSE,
+                     early_stopping_rounds = 25,
+                     objective = "reg:linear",
+                     print_every_n = 10,
+                     verbose = TRUE)
+
+gc(verbose = FALSE)
+set.seed(27272436)
+temp_model <- xgb.train(data = dtrain,
+                           nthread = 8,
+                           #nrounds = 2, # quick test
+                           nrounds = floor(temp_model$best_iteration * 1.25),
+                           max_depth = 6,
+                           eta = 0.0404096, # Santander overfitting magic number X2
+                           subsample = 0.70,
+                           colsample_bytree = 0.70,
+                           booster = "gbtree",
+                           eval_metric = "mae",
+                           maximize = FALSE,
+                           objective = "reg:linear",
+                           print_every_n = 10,
+                           verbose = TRUE,
+                           watchlist = list(train = transformed_train_vars_removed))
