@@ -1,0 +1,142 @@
+---
+title: "Allstate EDA"
+author: "dmi3kno"
+date: "10 October 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(gridExtra)
+library(corrplot)
+library(GGally)
+library(ggplot2)
+library(e1071)
+```
+
+## Loading and exploring the data
+
+We will quickly load the data and look around. The competition rules state that the data contain some anonymized categorical and numerical features.
+
+```{r loading}
+dt_train <- fread("../input/train.csv")
+dt_test <- fread("../input/test.csv")
+
+names(dt_train)
+
+cat_var <- names(dt_train)[which(sapply(dt_train, is.character))]
+num_var <- names(dt_train)[which(sapply(dt_train, is.numeric))]
+num_var <- setdiff(num_var, c("id", "loss"))
+
+dt_train_cat <- dt_train[,.SD, .SDcols = cat_var]
+dt_train_num <- dt_train[,.SD,.SDcols = num_var]
+
+```
+
+It seems there are total of `r length(cat_var)` categorical and `r length(num_var)` continuous features, not counting `id` and the label.
+
+``` {r uncomment_if_curious}
+#Missing values
+#colSums(sapply(dt_train, is.na))
+
+# Check for duplicated rows.
+#cat("The number of duplicated rows are", nrow(dt_train) - nrow(unique(dt_train)))
+```
+
+There are no missing values and no duplicated rows.
+
+## Plots
+
+Lets look at some plots to see what we are up against in this competition. We will need some helper functions which I creatively borrowed [from AiO](https://www.kaggle.com/notaapple/house-prices-advanced-regression-techniques/detailed-exploratory-data-analysis-using-r/discussion)
+
+```{r helperfun}
+
+plotBox <- function(data_in, i, lab) {
+  data <- data.frame(x=data_in[[i]], y=lab)
+  p <- ggplot(data=data, aes(x=x, y=y)) +geom_boxplot()+ xlab(colnames(data_in)[i]) + theme_light() + 
+   ylab("log(loss)") + theme(axis.text.x = element_text(angle = 90, hjust =1))
+  return (p)
+}
+
+doPlots <- function(data_in, fun, ii, lab, ncol=3) {
+  pp <- list()
+  for (i in ii) {
+    p <- fun(data_in=data_in, i=i, lab=lab)
+    pp <- c(pp, list(p))
+  }
+  do.call("grid.arrange", c(pp, ncol=ncol))
+}
+
+plotScatter <- function(data_in, i, lab){
+  data <- data.frame(x=data_in[[i]], y = lab)
+  p <- ggplot(data= data, aes(x = x, y=y)) + geom_point(size=1, alpha=0.3)+ geom_smooth(method = lm) +
+    xlab(paste0(colnames(data_in)[i], '\n', 'R-Squared: ', round(cor(data_in[[i]], lab, use = 'complete.obs'), 2)))+
+    ylab("log(loss)") + theme_light()
+  return(suppressWarnings(p))
+} 
+
+plotDen <- function(data_in, i, lab){
+  data <- data.frame(x=data_in[[i]], y=lab)
+  p <- ggplot(data= data) + geom_density(aes(x = x), size = 1,alpha = 1.0) +
+    xlab(paste0((colnames(data_in)[i]), '\n', 'Skewness: ',round(skewness(data_in[[i]], na.rm = TRUE), 2))) +
+    theme_light() 
+  return(p)
+}
+```
+
+Now, we are going to call these functions one after another to explore categorical and then continiuous features
+
+### Categorical features
+
+Features look very similar with most of them having quite low cardinality. Uncomment more lines to see the rest of features.
+
+```{r boxplots, echo=FALSE}
+doPlots(dt_train_cat, fun = plotBox, ii =1:12, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =13:24, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =25:36, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =37:48, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =49:60, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =61:72, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =73:84, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =85:96, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =97:108, lab=log(dt_train$loss), ncol = 3)
+#doPlots(dt_train_cat, fun = plotBox, ii =109:116, lab=log(dt_train$loss), ncol = 3)
+```
+
+### Continuous features
+
+Density functions for some of the continuous features make me think they used to be categorical as well.
+
+```{r density_plots, echo=FALSE}
+doPlots(dt_train_num, fun = plotDen, ii =1:6, lab=log(dt_train$loss), ncol = 3)
+doPlots(dt_train_num, fun = plotDen, ii =7:14, lab=log(dt_train$loss), ncol = 3)
+
+```
+
+Patient is mostly dead
+
+```{r scatter_plots, echo=FALSE}
+doPlots(dt_train_num, fun = plotScatter, ii =1:6, lab=log(dt_train$loss), ncol = 3)
+doPlots(dt_train_num, fun = plotScatter, ii =7:14, lab=log(dt_train$loss), ncol = 3)
+
+```
+
+## Correlations
+
+Some of the continuous features are quite correlated, which makes it hard to count on linear regressions right away
+
+```{r correlations}
+correlations <- cor(dt_train_num)
+corrplot(correlations, method="square", order="hclust")
+```
+
+## Label
+
+We need to say something about the label as well. Easiest is just to look at the histogram. Again, I am going to look at the log, because the distribution is quite skewed.
+
+```{r}
+ggplot(dt_train) + geom_histogram(mapping=aes(x=log(loss)))
+```
+
+To be continued
